@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:">
+  <title>Vid Editor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="toolbar">
+    <div class="brand">Vid Editor</div>
+    <button id="btn-import" class="primary">+ Import</button>
+    <div class="sep"></div>
+    <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btn-redo" title="Redo (Ctrl+Y)">Redo</button>
+    <div class="sep"></div>
+    <button id="btn-split" title="Split at playhead (S)">Split</button>
+    <button id="btn-delete" title="Delete clip (Del)">Delete</button>
+    <div class="spacer"></div>
+    <label class="field">Size
+      <select id="set-size">
+        <option value="1920x1080">1080p · 16:9</option>
+        <option value="1280x720" selected>720p · 16:9</option>
+        <option value="854x480">480p · 16:9</option>
+        <option value="1080x1920">Vertical 9:16</option>
+        <option value="1080x1080">Square 1:1</option>
+      </select>
+    </label>
+    <label class="field">FPS
+      <select id="set-fps">
+        <option>24</option>
+        <option selected>30</option>
+        <option>60</option>
+      </select>
+    </label>
+    <button id="btn-export" class="accent">Export MP4</button>
+  </header>
+
+  <main id="workspace">
+    <aside id="media-panel" class="panel">
+      <div class="panel-title">Media</div>
+      <div id="media-list" class="media-list">
+        <div class="empty-hint">Click <b>Import</b> or drop video files here</div>
+      </div>
+    </aside>
+
+    <section id="preview-panel" class="panel">
+      <div id="stage">
+        <div id="frame">
+          <div id="players"></div>
+          <div id="no-video">Add clips to the timeline to start editing</div>
+        </div>
+        <div id="xform">
+          <div id="xform-box" class="hidden">
+            <div class="xf-h" data-h="scale" style="left:0;top:0;cursor:nwse-resize"></div>
+            <div class="xf-h" data-h="scale" style="left:100%;top:0;cursor:nesw-resize"></div>
+            <div class="xf-h" data-h="scale" style="left:0;top:100%;cursor:nesw-resize"></div>
+            <div class="xf-h" data-h="scale" style="left:100%;top:100%;cursor:nwse-resize"></div>
+            <div class="xf-stick"></div>
+            <div class="xf-rot" data-h="rotate" title="Drag to turn (Shift = 15° steps)"></div>
+          </div>
+        </div>
+      </div>
+      <div id="transport">
+        <button id="btn-start" title="Go to start (Home)">⏮</button>
+        <button id="btn-play" class="play" title="Play / pause (Space)">▶</button>
+        <button id="btn-end" title="Go to end (End)">⏭</button>
+        <div id="timecode">00:00.00 <span>/ 00:00.00</span></div>
+        <div class="spacer"></div>
+        <div id="export-length"></div>
+      </div>
+    </section>
+
+    <aside id="inspector" class="panel">
+      <div class="panel-title">Inspector</div>
+      <div id="inspector-body"><div class="empty-hint">Select a clip on the timeline</div></div>
+    </aside>
+  </main>
+
+  <section id="timeline">
+    <div id="tl-header">
+      <span class="panel-title">Timeline</span>
+      <span class="hint">Drag clips anywhere · drop a clip on another to make a new track · drag edges to trim · S splits · Space plays</span>
+      <div class="spacer"></div>
+      <label class="field">Zoom <input id="zoom" type="range" min="10" max="300" value="60"></label>
+    </div>
+    <div id="tl-scroll">
+      <div id="tl-content">
+        <div id="ruler"></div>
+        <div id="tracks"></div>
+        <div id="playhead"><div class="ph-head"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="modal" class="hidden">
+    <div class="modal-box">
+      <h3 id="modal-title">Exporting…</h3>
+      <div class="progress"><div id="progress-bar"></div></div>
+      <div id="modal-text">0%</div>
+      <div class="modal-actions">
+        <button id="modal-reveal" class="hidden">Show in folder</button>
+        <button id="modal-close">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="effects.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
