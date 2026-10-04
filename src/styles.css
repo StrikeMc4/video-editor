@@ -7,6 +7,7 @@
   --muted: #8b8f9c;
   --accent: #6c8cff;
   --accent-2: #ff6b8b;
+  --fx: #ff9a3c;
   --clip: #3a4a8c;
   --clip-sel: #6c8cff;
   --playhead: #ff5470;
@@ -135,6 +136,19 @@ input[type="range"] { accent-color: var(--accent); }
 }
 .media-item:hover .add { opacity: 1; }
 
+/* built-in effects (under the media bin) */
+.fx-title {
+  display: flex; align-items: center; justify-content: space-between;
+  border-top: 1px solid var(--line); margin-top: 2px;
+}
+.fx-sound {
+  display: flex; align-items: center; gap: 4px;
+  text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; color: var(--text); cursor: pointer;
+}
+.fx-list { flex: 0 0 auto; max-height: 45%; }
+.fx-list .media-item .add { background: var(--fx); }
+.fx-list .media-item:hover .thumb { border-color: var(--fx); }
+
 /* preview */
 #preview-panel { background: var(--bg); }
 #stage {
@@ -157,7 +171,7 @@ input[type="range"] { accent-color: var(--accent); }
   box-shadow: 0 6px 30px rgba(0,0,0,.5);
   overflow: hidden;
 }
-#players { position: absolute; inset: 0; }
+#players { position: absolute; inset: 0; isolation: isolate; } /* keeps screen-blended layers inside the frame */
 .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; visibility: hidden; }
 #no-video {
   position: absolute; inset: 0;
@@ -217,6 +231,7 @@ input[type="range"] { accent-color: var(--accent); }
 .preset.active .plabel { color: var(--text); }
 .btn-row { display: flex; gap: 6px; margin-top: 6px; }
 .btn-row button { flex: 1; }
+.row label.check { width: auto; color: var(--text); display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .small-note { color: var(--muted); font-size: 11px; margin: 2px 0 8px; }
 
 /* ---------- timeline ---------- */
@@ -275,6 +290,7 @@ input[type="range"] { accent-color: var(--accent); }
   cursor: grab;
   border: 2px solid #4d5ea8;
 }
+.clip.fx { background: #6b3a1c; border-color: #b8652a; }
 .clip.selected { border-color: #fff; box-shadow: 0 0 0 1px var(--clip-sel); z-index: 2; }
 .clip.dragging { opacity: .35; }
 .clip-bg {

@@ -18,6 +18,7 @@ There is no test suite, linter or build in the repo. Verify changes by driving t
 | `main.js` | Main process: window, open/save dialogs, `ffprobe` (duration, display size, rotation, audio), thumbnails into a temp dir, spawns the export and streams progress |
 | `preload.js` | `contextBridge` → `window.api` (importMedia, loadMedia, pathForFile, exportVideo, cancelExport, onExportProgress, revealFile) |
 | `export.js` | `buildExportArgs(clips, settings, outPath)`: builds the whole FFmpeg command/`filter_complex`. Pure function, can be tested from Node |
+| `builtin-effects.js` | Main only. Renders the built-in overlay effects (particle renderer → raw frames → FFmpeg, with an `aevalsrc` sound) into `userData/builtin-effects/<key>-v<VERSION>.mp4` on first run. Bump `VERSION` after changing an effect |
 | `src/effects.js` | Shared by renderer **and** main (UMD: `<script>` sets `window.Effects`, Node uses `require`). Filter presets (CSS + FFmpeg equivalents), transitions, `DEFAULT_ADJUST`, `DEFAULT_TRANSFORM`, `clampTransition`, `buttedNext`, `transitionPairs` |
 | `src/renderer.js` | All UI: state, undo, timeline, playback, transform box, inspector, export modal. One classic script; top-level `const`s/functions are globals |
 | `src/index.html`, `src/styles.css` | Layout; CSS colour tokens live on `:root` |
@@ -25,9 +26,11 @@ There is no test suite, linter or build in the repo. Verify changes by driving t
 ## Data model (renderer `state`)
 
 ```js
-media: [{ id, path, name, url, thumb, duration, width, height, hasAudio }]  // width/height = DISPLAY size
+media: [{ id, path, name, url, thumb, duration, width, height, hasAudio,
+          builtin?, blend? }]                     // width/height = DISPLAY size; builtin = effect key
 clips: [{ id, mediaId, track, start, in, out, effect, adjust,
           transform: { x, y, scale, rotation },   // x/y = fraction of frame, scale vs fit-to-frame, deg clockwise
+          blend, muted,                           // 'normal' | 'screen'; muted drops the clip's audio
           transition: { type, duration } }]       // to the clip butted after it on the same track
 ```
 
@@ -35,7 +38,8 @@ clips: [{ id, mediaId, track, start, in, out, effect, adjust,
 - Tracks are **implicit**: `trackCount()` is derived from the clips. After any move or delete, call `normalizeTracks()` so empty tracks vanish.
 - Placement rule (the user explicitly asked for it): if a dropped clip overlaps a clip on the target track, it goes on a **new track directly above** that track. Dropping above all tracks or below V1 creates a top or bottom track. Use `planPlacement()` + `applyPlacement()`, and never set `track` by hand.
 - A transition exists only when two clips **butt** on the same track (`|b.start - aEnd| < BUTT_EPS`). It is centred on the cut and must never shift timing. `clampTransition` caps it at the shorter clip.
-- Old clips may lack `transform`. Always read it through `tf(c)`.
+- Old clips may lack `transform`, `blend` or `muted`. Read them through `tf(c)` / `isScreen(c)` / `!!c.muted`.
+- Built-in effects live in `state.media` with `builtin` set. The media bin shows only files without it, and the Effects list shows only effects.
 
 ## Conventions
 
@@ -81,4 +85,4 @@ Before finishing, re-check every feature listed in `VIDEDIT.md` that your change
 
 ## Not implemented yet
 
-Project save/load, cropping, per-clip volume, audio-only tracks, packaging/installer. These are listed as limitations in `VIDEDIT.md`, so update that section when adding one.
+Project save/load, cropping, per-clip volume (only mute exists), audio-only tracks, packaging/installer. These are listed as limitations in `VIDEDIT.md`, so update that section when adding one.

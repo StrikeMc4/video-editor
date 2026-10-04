@@ -5,7 +5,9 @@
 // scaled, rotated and positioned by its transform. Layers are overlaid on a
 // black canvas from the bottom track up, each only during its time range, so
 // lower tracks show around clips that were made smaller or turned.
-// Audio: every clip's audio is delayed to its timeline position and mixed.
+// Layers with the "screen" blend (built-in effects on black) are combined with
+// what is below them by brightening it, so their black background vanishes.
+// Audio: every clip's audio (unless muted) is delayed to its timeline position and mixed.
 const { TRANSITIONS, DEFAULT_TRANSFORM, ffmpegFilter, transitionPairs } = require('./src/effects');
 
 const f3 = (n) => Math.max(0, n).toFixed(3);
@@ -14,8 +16,8 @@ const even = (n) => Math.max(2, 2 * Math.round(n / 2));
 /**
  * @param {Array<{id:string, path:string, hasAudio:boolean, mediaDuration:number,
  *   mediaWidth:number, mediaHeight:number, track:number, start:number, in:number,
- *   out:number, effect:string, adjust:object, transform:object,
- *   transition:{type:string,duration:number}}>} clips
+ *   out:number, effect:string, adjust:object, transform:object, blend?:string,
+ *   muted?:boolean, transition:{type:string,duration:number}}>} clips
  * @param {{width:number, height:number, fps:number}} settings
  * @param {string} outPath
  * @returns {{args:string[], duration:number}}
@@ -36,11 +38,12 @@ function buildExportArgs(clips, settings, outPath) {
     const tout = pairs.get(c.id);
     const start = q(c.start + (tin ? tin.duration / 2 : 0));
     const end = q(clipEnd(c) - (tout ? tout.duration / 2 : 0));
-    if (end - start >= 0.5 / fps) items.push({ kind: 'clip', c, track: c.track, start, end });
+    if (end - start >= 0.5 / fps) items.push({ kind: 'clip', c, track: c.track, start, end, screen: c.blend === 'screen' });
   }
   for (const p of pairs.values()) {
     const cut = clipEnd(p.a);
-    items.push({ kind: 'tr', p, track: p.a.track, start: q(cut - p.duration / 2), end: q(cut + p.duration / 2) });
+    const screen = p.a.blend === 'screen' && p.b.blend === 'screen';
+    items.push({ kind: 'tr', p, track: p.a.track, start: q(cut - p.duration / 2), end: q(cut + p.duration / 2), screen });
   }
   items.sort((a, b) => a.track - b.track || a.start - b.start);
   const total = Math.max(...clips.map((c) => q(clipEnd(c))), ...items.map((i) => i.end));
@@ -100,7 +103,16 @@ function buildExportArgs(clips, settings, outPath) {
 
   graph.push(`color=c=black:s=${W}x${H}:r=${fps}:d=${f3(total)},format=yuv420p[base0]`);
   items.forEach((it, k) => {
-    graph.push(`[base${k}][l${k}t]overlay=eof_action=pass:enable='gte(t,${f3(it.start)})*lt(t,${f3(it.end)})'[base${k + 1}]`);
+    const enable = `enable='gte(t,${f3(it.start)})*lt(t,${f3(it.end)})'`;
+    if (!it.screen) {
+      graph.push(`[base${k}][l${k}t]overlay=eof_action=pass:${enable}[base${k + 1}]`);
+      return;
+    }
+    // Screen is done in RGB (in YUV it shifts colours). Premultiplying turns
+    // the layer's transparent area into black, which screen leaves unchanged.
+    graph.push(`[base${k}]format=gbrp[bg${k}]`);
+    graph.push(`[l${k}t]format=rgba,premultiply=inplace=1,format=gbrp[fg${k}]`);
+    graph.push(`[bg${k}][fg${k}]blend=all_mode=screen:eof_action=pass:${enable},format=yuv420p[base${k + 1}]`);
   });
   graph.push(`[base${items.length}]format=yuv420p,setsar=1[vout]`);
 
@@ -108,7 +120,7 @@ function buildExportArgs(clips, settings, outPath) {
   // transition and fades out while the incoming one fades in.
   const audio = [];
   for (const c of clips) {
-    if (!c.hasAudio) continue;
+    if (!c.hasAudio || c.muted) continue;
     const tin = incoming.get(c.id);
     const tout = pairs.get(c.id);
     let srcStart = c.in - (tin ? tin.duration / 2 : 0);

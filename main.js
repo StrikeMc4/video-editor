@@ -8,6 +8,7 @@ const { spawn, execFile } = require('child_process');
 const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
 const ffprobePath = require('ffprobe-static').path.replace('app.asar', 'app.asar.unpacked');
 const { buildExportArgs } = require('./export');
+const { ensureEffects } = require('./builtin-effects');
 
 const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', '3gp', 'ts', 'mts'];
 
@@ -57,9 +58,9 @@ function probe(file) {
   });
 }
 
-function thumbnail(file, duration) {
+function thumbnail(file, duration, at = Math.min(1, duration / 2)) {
   const out = path.join(thumbDir, `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
-  const at = Math.min(1, duration / 2).toFixed(2);
+  at = at.toFixed(2);
   return new Promise((resolve) => {
     execFile(ffmpegPath, ['-v', 'error', '-ss', at, '-i', file, '-frames:v', '1', '-vf', 'scale=320:-2', '-y', out],
       (err) => resolve(err ? null : pathToFileURL(out).href));
@@ -97,6 +98,29 @@ ipcMain.handle('media:import', async () => {
 });
 
 ipcMain.handle('media:load', (_e, paths) => loadMedia(paths));
+
+// Built-in effects are generated on first use and cached in the user data folder.
+ipcMain.handle('effects:list', async () => {
+  try {
+    const list = await ensureEffects(ffmpegPath, path.join(app.getPath('userData'), 'builtin-effects'));
+    const items = [];
+    for (const fx of list) {
+      const info = await probe(fx.path);
+      items.push({
+        path: fx.path,
+        name: fx.label,
+        url: pathToFileURL(fx.path).href,
+        thumb: await thumbnail(fx.path, info.duration, fx.thumbAt),
+        ...info,
+        builtin: fx.key,
+        blend: 'screen',
+      });
+    }
+    return { items };
+  } catch (e) {
+    return { items: [], error: e.message };
+  }
+});
 
 ipcMain.handle('export:start', async (_e, project) => {
   if (exportProc) return { ok: false, error: 'An export is already running.' };

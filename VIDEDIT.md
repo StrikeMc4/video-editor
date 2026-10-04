@@ -1,6 +1,6 @@
 # VIDEDIT: Vid Editor guide
 
-Vid Editor is a desktop video editor for Windows, built with Electron and FFmpeg. It has a multi-track timeline, trimming and splitting, filters, transitions, and per-clip **resize, rotate and move**. It exports to MP4.
+Vid Editor is a desktop video editor for Windows, built with Electron and FFmpeg. It has a multi-track timeline, trimming and splitting, filters, transitions, built-in **effects with sound** (explosion, fireworks, …), and per-clip **resize, rotate and move**. It exports to MP4.
 
 ---
 
@@ -34,8 +34,9 @@ FFmpeg is included through the `ffmpeg-static` and `ffprobe-static` npm packages
 ```
 
 - **Media:** the files you imported. Drag them onto the timeline, double-click them, or click their **+** button.
+- **Effects:** built-in effects (Explosion, Fireworks, Lightning, Magic sparkle), under the media files. See section 9.
 - **Preview:** shows the frame at the playhead. Higher tracks are drawn over lower ones.
-- **Inspector:** timing, transform, filter and transition settings for the selected clip.
+- **Inspector:** timing, transform, filter, blend & sound and transition settings for the selected clip.
 - **Timeline:** your edit. Each row is a track (V1, V2, …).
 
 ---
@@ -138,7 +139,36 @@ The transition is centred on the cut, so other clips on the timeline don't shift
 
 ---
 
-## 9. Exporting
+## 9. Effects (explosion, fireworks, …) and sound
+
+The **Effects** list under your media has ready-made effects:
+
+| Effect | Length | Sound |
+|---|---|---|
+| Explosion | 2.5 s | boom |
+| Fireworks | 3 s | whistles, bangs and crackle |
+| Lightning | 2 s | crack and thunder rumble |
+| Magic sparkle | 2 s | chime |
+
+### Adding an effect
+- Click an effect's **+** (or double-click it). It's added **at the playhead, on top of everything**: on the top track if that's free there, otherwise on a new top track.
+- Or **drag it onto a clip** on the timeline. Like any clip, it lands on a new track above that clip.
+
+An effect is a normal clip (orange on the timeline). You can move it, trim it, split it, and use **Transform** to make it smaller or move it, for example to put the explosion on a car in the corner.
+
+### With or without sound
+- The **With sound** box at the top of the Effects list decides whether effects you add **from now on** play their sound.
+- To change one clip, select it and use **Inspector → Blend & sound → Sound**. A clip without sound shows a **Muted** badge on the timeline.
+- This works for any clip with audio, not just effects, so you can also mute your own videos.
+
+### Blend
+Effects are drawn on black and use the **Screen** blend: the black disappears and only the fire and light show over the video below. You can switch any clip between **Normal** and **Screen** in **Inspector → Blend & sound**. This is useful for your own effect footage on a black background (stock explosions, light leaks and so on).
+
+The effects are created the first time the app starts (this takes a few seconds) and are saved in the app's data folder, so later starts are instant.
+
+---
+
+## 10. Exporting
 
 1. Choose **Size**: 1080p, 720p or 480p (16:9), Vertical 9:16, or Square 1:1. The preview frame changes to match.
 2. Choose **FPS**: 24, 30 or 60.
@@ -149,7 +179,7 @@ The output is H.264 video with AAC audio, and it plays everywhere.
 
 ---
 
-## 10. Keyboard shortcuts
+## 11. Keyboard shortcuts
 
 | Key | Action |
 |---|---|
@@ -167,13 +197,14 @@ The output is H.264 video with AAC audio, and it plays everywhere.
 
 ---
 
-## 11. How it works (for developers)
+## 12. How it works (for developers)
 
 | File | Purpose |
 |---|---|
 | `main.js` | Electron main process: window, file dialogs, `ffprobe` (duration, size, rotation, audio), thumbnails, runs the export and reports progress |
 | `preload.js` | Safe bridge (`window.api`) between the UI and the main process |
 | `export.js` | Builds the FFmpeg `filter_complex` for the whole timeline |
+| `builtin-effects.js` | Draws the built-in effects with a small particle renderer, makes their sounds with FFmpeg, and caches them as MP4s |
 | `src/effects.js` | Filters, transitions and the default transform. Shared by the preview (CSS) and the export (FFmpeg) so they match |
 | `src/renderer.js` | The editor UI: state, timeline, tracks, playback, the transform box, the inspector, undo/redo |
 | `src/index.html`, `src/styles.css` | Layout and styling |
@@ -184,18 +215,20 @@ The output is H.264 video with AAC audio, and it plays everywhere.
   in, out,                          // which part of the source file
   effect, adjust,                   // filter
   transform: { x, y, scale, rotation },
+  blend,                            // 'normal' or 'screen'
+  muted,                            // true = the clip's sound is left out
   transition: { type, duration } }  // to the next touching clip on the same track
 ```
 
-**Preview:** one `<video>` element per track, stacked in track order. Filters and transforms are CSS `filter`/`transform`. The playhead is the master clock, and each layer follows the clip under it.
+**Preview:** one `<video>` element per track, stacked in track order. Filters and transforms are CSS `filter`/`transform`. Screen blend is CSS `mix-blend-mode: screen`, and a muted clip's `<video>` is muted. The playhead is the master clock, and each layer follows the clip under it.
 
-**Export:** every clip (and every transition) becomes a full-frame layer with a transparent background. FFmpeg filters scale the clip, apply its filter, rotate it, and place it on that layer. The layers are overlaid on a black canvas from V1 upward, each only during its own time on the timeline. Transitions use FFmpeg `xfade` between the two clips' layers, centred on the cut. All audio is placed at its timeline position and mixed with `amix`.
+**Export:** every clip (and every transition) becomes a full-frame layer with a transparent background. FFmpeg filters scale the clip, apply its filter, rotate it, and place it on that layer. The layers are overlaid on a black canvas from V1 upward, each only during its own time on the timeline. Screen-blend layers are combined with FFmpeg `blend=all_mode=screen` in RGB instead of `overlay`. Transitions use FFmpeg `xfade` between the two clips' layers, centred on the cut. All audio from clips that aren't muted is placed at its timeline position and mixed with `amix`.
 
 ---
 
-## 12. Known limitations
+## 13. Known limitations
 
 - The **preview of transitions** is a simple fade. The exported file has the real wipe, slide, and so on.
 - Some formats (for example HEVC/H.265 or certain MKV/AVI files) may show **black in the preview** because the built-in player can't decode them. They still **export correctly**.
-- Clips can't be cropped, and there is no separate volume control per clip or audio-only track yet.
+- Clips can't be cropped. Sound is on/off per clip, but there's no volume control yet and no audio-only track.
 - Projects can't be saved yet. Closing the app loses the current edit (export it first).
