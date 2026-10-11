@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:; media-src 'self' file:">
-  <title>Vid Editor</title>
+  <title>Opus</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header id="toolbar">
-    <div class="brand">Vid Editor</div>
+    <div class="brand">Opus</div>
     <button id="btn-import" class="primary">+ Import</button>
     <div class="sep"></div>
     <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
@@ -55,6 +55,7 @@
           <div id="players"></div>
           <div id="no-video">Add clips to the timeline to start editing</div>
         </div>
+        <div id="texts"></div>
         <div id="xform">
           <div id="xform-box" class="hidden">
             <div class="xf-h" data-h="scale" style="left:0;top:0;cursor:nwse-resize"></div>
@@ -76,10 +77,18 @@
       </div>
     </section>
 
-    <aside id="inspector" class="panel">
-      <div class="panel-title">Inspector</div>
-      <div id="inspector-body"><div class="empty-hint">Select a clip on the timeline</div></div>
-    </aside>
+    <div id="right-col">
+      <aside id="text-panel" class="panel">
+        <div class="panel-title text-title">Text
+          <button id="btn-add-text" class="primary" title="Add a text at the playhead">+ Add text</button>
+        </div>
+        <div id="text-body"></div>
+      </aside>
+      <aside id="inspector" class="panel">
+        <div class="panel-title">Inspector</div>
+        <div id="inspector-body"><div class="empty-hint">Select a clip on the timeline</div></div>
+      </aside>
+    </div>
   </main>
 
   <section id="timeline">

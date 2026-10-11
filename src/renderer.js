@@ -1,10 +1,12 @@
 'use strict';
 
-const { PRESETS, TRANSITIONS, DEFAULT_ADJUST, DEFAULT_TRANSFORM, cssFilter, buttedNext, transitionPairs } = window.Effects;
+const { PRESETS, TRANSITIONS, DEFAULT_ADJUST, DEFAULT_TRANSFORM, cssFilter, buttedNext, transitionPairs,
+  FONTS, DEFAULT_TEXT, TEXT_BG_ALPHA, TEXT_PAD_EM, TEXT_OUTLINE_EM } = window.Effects;
 
 const MIN_CLIP = 0.1; // seconds
 const ROW_H = 58;     // track row height (px)
 const PAD = 28;       // drop zone above/below the tracks for creating new tracks (px)
+const TEXT_H = 30;   // height of the text lane above the tracks (px), shown once there is a text
 const SNAP_PX = 8;
 const GUTTER = 34;    // left margin for track labels (px)
 const xOf = (t) => GUTTER + t * state.zoom;
@@ -12,7 +14,7 @@ const xOf = (t) => GUTTER + t * state.zoom;
 const $ = (sel) => document.querySelector(sel);
 const el = {
   players: $('#players'), noVideo: $('#no-video'), frame: $('#frame'), stage: $('#stage'),
-  xform: $('#xform'), xformBox: $('#xform-box'),
+  xform: $('#xform'), xformBox: $('#xform-box'), texts: $('#texts'), textBody: $('#text-body'),
   mediaList: $('#media-list'), fxList: $('#fx-list'), fxSound: $('#fx-sound'), inspector: $('#inspector-body'),
   scroll: $('#tl-scroll'), content: $('#tl-content'), ruler: $('#ruler'), tracks: $('#tracks'), playhead: $('#playhead'),
   timecode: $('#timecode'), exportLength: $('#export-length'), play: $('#btn-play'), zoom: $('#zoom'),
@@ -22,7 +24,9 @@ const el = {
 const state = {
   media: [],        // imported files and built-in effects: {id, path, name, url, thumb, duration, width, height, hasAudio, builtin?, blend?}
   clips: [],        // {id, mediaId, track, start, in, out, effect, adjust, transform, blend, muted, transition:{type, duration}}
+  texts: [],        // {id, text, font, bold, size, color, outline, bg, bgColor, x, y, start, duration}: titles drawn over the video
   selectedId: null,
+  selectedTextId: null,
   playhead: 0,      // seconds on the timeline
   playing: false,
   zoom: 60,         // pixels per second
@@ -47,7 +51,8 @@ const transformCss = (c) => {
 };
 const totalDuration = () => state.clips.reduce((m, c) => Math.max(m, clipEnd(c)), 0);
 const trackCount = () => Math.max(1, ...state.clips.map((c) => c.track + 1));
-const rowTop = (track) => PAD + (trackCount() - 1 - track) * ROW_H; // top track is drawn first
+const laneH = () => (state.texts.length ? TEXT_H : 0);
+const rowTop = (track) => laneH() + PAD + (trackCount() - 1 - track) * ROW_H; // top track is drawn first
 
 const onTrack = (track, exceptId) => state.clips
   .filter((c) => c.track === track && c.id !== exceptId)
@@ -148,7 +153,9 @@ function snapTime(t, exceptId) {
 // ---------------------------------------------------------------- undo / redo
 
 const history = { past: [], future: [] };
-const snapshot = () => JSON.stringify({ clips: state.clips, selectedId: state.selectedId });
+const snapshot = () => JSON.stringify({
+  clips: state.clips, texts: state.texts, selectedId: state.selectedId, selectedTextId: state.selectedTextId,
+});
 
 function commit() {
   history.past.push(snapshot());
@@ -167,10 +174,13 @@ function endEdit() { editOpen = false; }
 function restore(snap) {
   const s = JSON.parse(snap);
   state.clips = s.clips;
+  state.texts = s.texts || [];
   state.selectedId = s.selectedId;
+  state.selectedTextId = state.texts.some((t) => t.id === s.selectedTextId) ? s.selectedTextId : null;
   pause();
   state.playhead = clamp(state.playhead, 0, totalDuration());
   renderAll();
+  renderTextPanel();
   showFrame();
 }
 function undo() {
@@ -408,6 +418,7 @@ function syncPlayers(t, playing) {
   }
   el.noVideo.classList.toggle('hidden', state.clips.length > 0);
   renderXform();
+  renderTexts();
 }
 
 // Throttle scrubbing to one sync per animation frame.
@@ -498,6 +509,7 @@ function fitFrame() {
   el.frame.style.width = `${Math.floor(w * scale)}px`;
   el.frame.style.height = `${Math.floor(h * scale)}px`;
   renderXform();
+  renderTexts();
 }
 
 // ---------------------------------------------------------------- transform (resize / turn / move in the preview)
@@ -631,6 +643,226 @@ function startTransformDrag(e, c, mode, rect) {
   window.addEventListener('pointerup', up);
 }
 
+// ---------------------------------------------------------------- text overlays
+//
+// Titles and captions drawn over the whole frame. They are not clips: they
+// have no track, just a start and a duration, and always sit above the video.
+// The preview uses real HTML text; the export uses FFmpeg's drawtext (export.js).
+
+const textById = (id) => state.texts.find((t) => t.id === id);
+const selectedText = () => textById(state.selectedTextId);
+const textEls = new Map();
+
+const hexRgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
+function styleTextEl(div, t, FH) {
+  const f = FONTS[t.font] || FONTS.arial;
+  Object.assign(div.style, {
+    left: `${(0.5 + t.x) * 100}%`,
+    top: `${(0.5 + t.y) * 100}%`,
+    transform: 'translate(-50%, -50%)',
+    fontSize: `${t.size * FH}px`,
+    fontFamily: f.css,
+    fontWeight: t.bold ? '700' : '400',
+    color: t.color,
+    background: t.bg ? hexRgba(t.bgColor, TEXT_BG_ALPHA) : 'none',
+    padding: t.bg ? `${TEXT_PAD_EM}em` : '0',
+    webkitTextStroke: t.outline ? `${TEXT_OUTLINE_EM * 2}em #000` : '0',
+    paintOrder: 'stroke fill',
+  });
+  div.classList.toggle('sel', t.id === state.selectedTextId && !state.playing);
+}
+
+// Shows the texts that are on at the playhead (called on every preview sync).
+function renderTexts() {
+  const FH = el.frame.clientHeight;
+  Object.assign(el.texts.style, {
+    left: `${el.frame.offsetLeft}px`, top: `${el.frame.offsetTop}px`,
+    width: `${el.frame.clientWidth}px`, height: `${FH}px`,
+  });
+  const live = new Set();
+  for (const t of state.texts) {
+    if (!t.text || state.playhead < t.start || state.playhead >= t.start + t.duration) continue;
+    live.add(t.id);
+    let div = textEls.get(t.id);
+    if (!div) {
+      div = document.createElement('div');
+      div.className = 'txt';
+      div.dataset.id = t.id;
+      el.texts.appendChild(div);
+      textEls.set(t.id, div);
+    }
+    div.textContent = t.text;
+    styleTextEl(div, t, FH);
+  }
+  for (const [id, div] of textEls) {
+    if (!live.has(id)) { div.remove(); textEls.delete(id); }
+  }
+}
+
+function addText() {
+  commit();
+  const t = { id: uid('t'), ...DEFAULT_TEXT, start: state.playhead, duration: 3 };
+  state.texts.push(t);
+  state.selectedTextId = t.id;
+  renderTextPanel();
+  showFrame();
+  const input = $('#t-text');
+  if (input) { input.focus(); input.select(); }
+}
+
+function deleteText() {
+  const t = selectedText();
+  if (!t) return;
+  commit();
+  state.texts = state.texts.filter((o) => o !== t);
+  state.selectedTextId = null;
+  renderTextPanel();
+  showFrame();
+}
+
+// Selecting a text moves the playhead into it, so it is visible and draggable.
+function selectText(id) {
+  state.selectedTextId = id;
+  const t = selectedText();
+  if (t && (state.playhead < t.start || state.playhead >= t.start + t.duration)) setPlayhead(t.start);
+  renderTextPanel();
+  showFrame();
+}
+
+el.texts.addEventListener('pointerdown', (e) => {
+  const div = e.target.closest('.txt');
+  if (e.button !== 0 || !div) return;
+  e.preventDefault();
+  pause();
+  state.selectedTextId = div.dataset.id;
+  renderTextPanel();
+  const t = selectedText();
+  const rect = el.texts.getBoundingClientRect();
+  const p0 = { x: e.clientX, y: e.clientY };
+  const t0 = { x: t.x, y: t.y };
+  let changed = false;
+  const move = (ev) => {
+    if (!changed && Math.hypot(ev.clientX - p0.x, ev.clientY - p0.y) < 3) return;
+    if (!changed) { commit(); changed = true; }
+    let x = t0.x + (ev.clientX - p0.x) / rect.width;
+    let y = t0.y + (ev.clientY - p0.y) / rect.height;
+    if (!ev.altKey) {
+      if (Math.abs(x * rect.width) < 6) x = 0; // snap to centre
+      if (Math.abs(y * rect.height) < 6) y = 0;
+    }
+    t.x = +x.toFixed(4);
+    t.y = +y.toFixed(4);
+    renderTexts();
+    el.textBody.querySelectorAll('[data-tpos]').forEach((input) => {
+      input.value = Math.round(t[input.dataset.tpos] * 100);
+    });
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+});
+
+function renderTextPanel() {
+  const t = selectedText();
+  let html = state.texts.length
+    ? `<div class="text-list">${state.texts.map((o) => `
+        <button class="text-item${o.id === state.selectedTextId ? ' active' : ''}" data-id="${o.id}">
+          <span class="tname">${esc(o.text || '(empty)')}</span><span class="ttime">${fmt(o.start).slice(0, 5)}</span>
+        </button>`).join('')}</div>`
+    : '<div class="empty-hint">Click <b>+ Add text</b> to put a title or caption on the video</div>';
+  if (t) {
+    html += `
+      <div class="row"><label>Text</label><input type="text" id="t-text" value="${esc(t.text)}"></div>
+      <div class="row"><label>Font</label>
+        <select id="t-font">${Object.entries(FONTS).map(([k, f]) =>
+          `<option value="${k}"${t.font === k ? ' selected' : ''}>${f.label}</option>`).join('')}</select>
+      </div>
+      <div class="row"><label>Size</label>
+        <input type="range" id="t-size" min="2" max="30" step="0.5" value="${t.size * 100}">
+        <span class="val" id="t-size-val">${Math.round(t.size * 100)}%</span>
+      </div>
+      <div class="row"><label>Colour</label><input type="color" id="t-color" value="${t.color}"></div>
+      <div class="row-checks">
+        <label class="check"><input type="checkbox" id="t-bold"${t.bold ? ' checked' : ''}> Bold</label>
+        <label class="check"><input type="checkbox" id="t-outline"${t.outline ? ' checked' : ''}> Outline</label>
+        <label class="check"><input type="checkbox" id="t-bg"${t.bg ? ' checked' : ''}> Box
+          <input type="color" id="t-bgcolor" value="${t.bgColor}"></label>
+      </div>
+      <div class="row"><label>Start</label><input type="number" id="t-start" step="0.1" min="0" value="${t.start.toFixed(2)}"> s</div>
+      <div class="row"><label>Duration</label><input type="number" id="t-dur" step="0.1" min="0.1" value="${t.duration.toFixed(2)}"> s</div>
+      <div class="row"><label>Position</label>
+        X <input type="number" class="tf-num" data-tpos="x" step="1" value="${Math.round(t.x * 100)}">
+        Y <input type="number" class="tf-num" data-tpos="y" step="1" value="${Math.round(t.y * 100)}"><span class="unit">%</span>
+      </div>
+      <div class="small-note">Or drag the text in the preview (Alt = no snapping).</div>
+      <div class="btn-row">
+        <button id="t-here" title="Move this text to start at the playhead">Start at playhead</button>
+        <button id="t-center">Centre</button>
+        <button id="t-del">Delete</button>
+      </div>`;
+  }
+  el.textBody.innerHTML = html;
+  renderTimeline();
+
+  el.textBody.querySelectorAll('.text-item').forEach((b) => { b.onclick = () => selectText(b.dataset.id); });
+  if (!t) return;
+
+  // Live edit: one undo step per gesture; the preview follows immediately.
+  const live = (sel, ev, apply) => {
+    const input = $(sel);
+    input.addEventListener(ev, () => { beginEdit(); apply(input); showFrame(); });
+    input.addEventListener('change', endEdit);
+  };
+  live('#t-text', 'input', (i) => {
+    t.text = i.value;
+    el.textBody.querySelector('.text-item.active .tname').textContent = t.text || '(empty)';
+    renderTimeline();
+  });
+  live('#t-font', 'change', (i) => { t.font = i.value; });
+  live('#t-size', 'input', (i) => {
+    t.size = parseFloat(i.value) / 100;
+    $('#t-size-val').textContent = `${Math.round(t.size * 100)}%`;
+  });
+  live('#t-color', 'input', (i) => { t.color = i.value; });
+  live('#t-bold', 'change', (i) => { t.bold = i.checked; });
+  live('#t-outline', 'change', (i) => { t.outline = i.checked; });
+  live('#t-bg', 'change', (i) => { t.bg = i.checked; });
+  live('#t-bgcolor', 'input', (i) => { t.bgColor = i.value; t.bg = true; $('#t-bg').checked = true; });
+  const timing = (sel, key, min) => {
+    const input = $(sel);
+    input.addEventListener('change', () => {
+      const v = parseFloat(input.value);
+      if (Number.isFinite(v)) { commit(); t[key] = Math.max(min, v); }
+      renderTextPanel();
+      showFrame();
+    });
+  };
+  timing('#t-start', 'start', 0);
+  timing('#t-dur', 'duration', 0.1);
+  el.textBody.querySelectorAll('[data-tpos]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      if (!Number.isFinite(v)) return;
+      beginEdit();
+      t[input.dataset.tpos] = clamp(v, -100, 100) / 100;
+      showFrame();
+    });
+    input.addEventListener('change', endEdit);
+  });
+  $('#t-here').onclick = () => { commit(); t.start = state.playhead; renderTextPanel(); showFrame(); };
+  $('#t-center').onclick = () => { commit(); t.x = 0; t.y = 0; renderTextPanel(); showFrame(); };
+  $('#t-del').onclick = deleteText;
+}
+
+$('#btn-add-text').onclick = addText;
+
 // ---------------------------------------------------------------- rendering
 
 function renderAll() {
@@ -679,9 +911,10 @@ function pickRulerStep() {
 function renderTimeline() {
   const n = trackCount();
   const total = totalDuration();
-  const width = Math.max(el.scroll.clientWidth, xOf(total + 10));
+  const textEnd = Math.max(0, ...state.texts.map((t) => t.start + t.duration));
+  const width = Math.max(el.scroll.clientWidth, xOf(Math.max(total, textEnd) + 10));
   el.content.style.width = `${width}px`;
-  el.tracks.style.height = `${PAD * 2 + n * ROW_H}px`;
+  el.tracks.style.height = `${laneH() + PAD * 2 + n * ROW_H}px`;
 
   // ruler
   const step = pickRulerStep();
@@ -694,14 +927,26 @@ function renderTimeline() {
   }
   el.ruler.innerHTML = ticks;
 
-  // track rows, top track first
+  // text lane on top, then track rows (top track first)
   let html = '';
+  if (state.texts.length) {
+    html += `<div class="track-row" style="top:0;height:${TEXT_H}px"><span class="track-label">T</span></div>`;
+    for (const t of state.texts) {
+      html += `
+        <div class="tbar${t.id === state.selectedTextId ? ' selected' : ''}" data-id="${t.id}" title="${esc(t.text)}"
+             style="left:${xOf(t.start)}px;width:${t.duration * state.zoom}px;top:4px;height:${TEXT_H - 8}px">
+          <div class="handle left" data-edge="start"></div>
+          <span class="tlabel">${esc(t.text || '(empty)')}</span>
+          <div class="handle right" data-edge="end"></div>
+        </div>`;
+    }
+  }
   for (let track = n - 1; track >= 0; track--) {
     html += `<div class="track-row" style="top:${rowTop(track)}px;height:${ROW_H}px">
       <span class="track-label">V${track + 1}</span></div>`;
   }
   if (!state.clips.length) {
-    html += `<div class="track-empty" style="top:${PAD}px;height:${ROW_H}px">Drag media here, or click + on a media item</div>`;
+    html += `<div class="track-empty" style="top:${laneH() + PAD}px;height:${ROW_H}px">Drag media here, or click + on a media item</div>`;
   }
 
   // clips
@@ -968,7 +1213,7 @@ function timeFromEvent(e) {
 
 // Track under the pointer; n = above all tracks, -1 = below all tracks.
 function trackFromEvent(e) {
-  const y = e.clientY - el.tracks.getBoundingClientRect().top;
+  const y = e.clientY - el.tracks.getBoundingClientRect().top - laneH();
   const n = trackCount();
   if (y < PAD) return n;
   const row = Math.floor((y - PAD) / ROW_H);
@@ -987,8 +1232,8 @@ function showGhost(plan, dur, label) {
   ghost.style.width = `${dur * state.zoom}px`;
   if (plan.insert) {
     let y;
-    if (plan.insert === 'top') y = PAD;
-    else if (plan.insert === 'bottom') y = PAD + n * ROW_H;
+    if (plan.insert === 'top') y = laneH() + PAD;
+    else if (plan.insert === 'bottom') y = laneH() + PAD + n * ROW_H;
     else y = rowTop(plan.track);
     const line = document.createElement('div');
     line.className = 'insert-line';
@@ -1039,6 +1284,15 @@ el.tracks.addEventListener('pointerdown', (e) => {
     $('#i-tr-type').focus();
     return;
   }
+  const bar = e.target.closest('.tbar');
+  if (bar) {
+    pause();
+    state.selectedTextId = bar.dataset.id;
+    renderTextPanel();
+    const h = e.target.closest('.handle');
+    startTextBarDrag(e, selectedText(), h ? h.dataset.edge : 'move');
+    return;
+  }
   const clipEl = e.target.closest('.clip');
   if (!clipEl) { startScrub(e); return; }
   const clip = clipById(clipEl.dataset.id);
@@ -1048,6 +1302,37 @@ el.tracks.addEventListener('pointerdown', (e) => {
   if (handle) startTrim(e, clip, handle.dataset.edge);
   else startClipDrag(e, clip);
 });
+
+// Text bars: drag to move, drag an edge to change when the text starts or ends.
+function startTextBarDrag(e, t, mode) {
+  const x0 = e.clientX;
+  const orig = { start: t.start, end: t.start + t.duration };
+  let changed = false;
+  const move = (ev) => {
+    if (!changed && Math.abs(ev.clientX - x0) < 3) return;
+    if (!changed) { commit(); changed = true; }
+    const dt = (ev.clientX - x0) / state.zoom;
+    if (mode === 'move') {
+      t.start = snapStart(orig.start + dt, t.duration, null);
+    } else if (mode === 'start') {
+      t.start = clamp(snapTime(orig.start + dt, null), 0, orig.end - MIN_CLIP);
+      t.duration = orig.end - t.start;
+    } else {
+      t.duration = Math.max(MIN_CLIP, snapTime(orig.end + dt, null) - orig.start);
+    }
+    renderTimeline();
+    state.playhead = mode === 'end' ? t.start + t.duration - 0.001 : t.start; // show the edge being moved
+    updatePlayheadUI();
+    showFrame();
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    if (changed) renderTextPanel();
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
 
 // Trimming moves only the dragged edge and stops at neighbouring clips.
 function startTrim(e, clip, edge) {
@@ -1235,6 +1520,7 @@ async function doExport() {
   const [width, height] = el.size.value.split('x').map(Number);
   const project = {
     settings: { width, height, fps: Number(el.fps.value) },
+    texts: state.texts.map((t) => ({ ...t })),
     clips: state.clips.map((c) => {
       const m = mediaById(c.mediaId);
       return {
@@ -1321,4 +1607,5 @@ document.addEventListener('keydown', (e) => {
 new ResizeObserver(fitFrame).observe(el.stage);
 new ResizeObserver(() => renderTimeline()).observe(el.scroll);
 renderAll();
+renderTextPanel();
 loadEffects();

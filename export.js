@@ -7,10 +7,50 @@
 // lower tracks show around clips that were made smaller or turned.
 // Layers with the "screen" blend (built-in effects on black) are combined with
 // what is below them by brightening it, so their black background vanishes.
+// Text overlays are drawn last with drawtext.
 // Audio: every clip's audio (unless muted) is delayed to its timeline position and mixed.
-const { TRANSITIONS, DEFAULT_TRANSFORM, ffmpegFilter, transitionPairs } = require('./src/effects');
+const fs = require('fs');
+const path = require('path');
+const {
+  TRANSITIONS, DEFAULT_TRANSFORM, FONTS, TEXT_BG_ALPHA, TEXT_PAD_EM, TEXT_OUTLINE_EM,
+  ffmpegFilter, transitionPairs,
+} = require('./src/effects');
 
 const f3 = (n) => Math.max(0, n).toFixed(3);
+const FONT_DIR = path.join(process.env.windir || 'C:\\Windows', 'Fonts');
+
+// A value for a drawtext option inside a filtergraph. Two layers of escaping:
+// first for the option parser (\ ' :), then the whole thing is single-quoted
+// for the graph parser (so , ; [ ] need nothing).
+const ffQuote = (s) => `'${String(s).replace(/[\\':]/g, '\\$&').replace(/'/g, `'\\''`)}'`;
+const ffColor = (hex) => `0x${String(hex).replace('#', '').padStart(6, '0').slice(0, 6)}`;
+
+function fontFile(t) {
+  const f = FONTS[t.font] || FONTS.arial;
+  const file = path.join(FONT_DIR, t.bold ? f.bold : f.reg);
+  return fs.existsSync(file) ? file : path.join(FONT_DIR, 'arial.ttf');
+}
+
+// One drawtext filter for a text overlay, centred on its x/y like the preview.
+function drawtext(t, W, H, fps) {
+  const px = Math.max(4, Math.round(t.size * H));
+  const q = (v) => (Math.round(v * fps) / fps).toFixed(3);
+  const end = t.start + t.duration;
+  const o = [
+    `fontfile=${ffQuote(fontFile(t).replace(/\\/g, '/'))}`,
+    `text=${ffQuote(t.text)}`,
+    'expansion=none',
+    `fontsize=${px}`,
+    `fontcolor=${ffColor(t.color)}`,
+    `x=(w-text_w)/2+${(t.x * W).toFixed(2)}`,
+    `y=(h-text_h)/2+${(t.y * H).toFixed(2)}`,
+  ];
+  if (t.outline) o.push(`borderw=${Math.max(1, Math.round(px * TEXT_OUTLINE_EM))}`, 'bordercolor=0x000000');
+  if (t.bg) o.push('box=1', `boxcolor=${ffColor(t.bgColor)}@${TEXT_BG_ALPHA}`, `boxborderw=${Math.round(px * TEXT_PAD_EM)}`);
+  o.push(`enable='gte(t,${q(t.start)})*lt(t,${q(end)})'`);
+  return `drawtext=${o.join(':')}`;
+}
+
 const even = (n) => Math.max(2, 2 * Math.round(n / 2));
 
 /**
@@ -20,9 +60,11 @@ const even = (n) => Math.max(2, 2 * Math.round(n / 2));
  *   muted?:boolean, transition:{type:string,duration:number}}>} clips
  * @param {{width:number, height:number, fps:number}} settings
  * @param {string} outPath
+ * @param {Array<{text:string, font:string, bold:boolean, size:number, color:string, outline:boolean,
+ *   bg:boolean, bgColor:string, x:number, y:number, start:number, duration:number}>} [texts]
  * @returns {{args:string[], duration:number}}
  */
-function buildExportArgs(clips, settings, outPath) {
+function buildExportArgs(clips, settings, outPath, texts = []) {
   const { width: W, height: H, fps } = settings;
   const q = (t) => Math.round(t * fps) / fps; // snap to the frame grid
   const clipEnd = (c) => c.start + c.out - c.in;
@@ -114,7 +156,13 @@ function buildExportArgs(clips, settings, outPath) {
     graph.push(`[l${k}t]format=rgba,premultiply=inplace=1,format=gbrp[fg${k}]`);
     graph.push(`[bg${k}][fg${k}]blend=all_mode=screen:eof_action=pass:${enable},format=yuv420p[base${k + 1}]`);
   });
-  graph.push(`[base${items.length}]format=yuv420p,setsar=1[vout]`);
+  // Text goes on top of everything, in list order.
+  let last = `base${items.length}`;
+  texts.filter((t) => t.text && t.duration > 0).forEach((t, k) => {
+    graph.push(`[${last}]${drawtext(t, W, H, fps)}[tx${k}]`);
+    last = `tx${k}`;
+  });
+  graph.push(`[${last}]format=yuv420p,setsar=1[vout]`);
 
   // Audio: around a transition the outgoing clip plays on for half the
   // transition and fades out while the incoming one fades in.

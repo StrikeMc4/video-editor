@@ -24,7 +24,7 @@ function createWindow() {
     minHeight: 650,
     backgroundColor: '#141519',
     autoHideMenuBar: true,
-    title: 'Vid Editor',
+    title: 'Opus',
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
@@ -131,7 +131,7 @@ ipcMain.handle('export:start', async (_e, project) => {
   });
   if (canceled || !filePath) return { canceled: true };
 
-  const { args, duration } = buildExportArgs(project.clips, project.settings, filePath);
+  const { args, duration } = buildExportArgs(project.clips, project.settings, filePath, project.texts);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (r) => { if (!settled) { settled = true; exportProc = null; resolve(r); } };

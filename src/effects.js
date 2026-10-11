@@ -39,6 +39,27 @@
   // is in degrees clockwise.
   const DEFAULT_TRANSFORM = { x: 0, y: 0, scale: 1, rotation: 0 };
 
+  // Text overlays. Fonts are the ones Windows ships (`reg`/`bold` are file names
+  // in the Fonts folder, used by the export; `css` is what the preview uses).
+  // size is a fraction of the frame height; x/y move the text's centre as a
+  // fraction of the frame width/height, like a clip's transform.
+  const FONTS = {
+    arial:   { label: 'Arial',           css: 'Arial, sans-serif',            reg: 'arial.ttf',   bold: 'arialbd.ttf' },
+    verdana: { label: 'Verdana',         css: 'Verdana, sans-serif',          reg: 'verdana.ttf', bold: 'verdanab.ttf' },
+    times:   { label: 'Times New Roman', css: '"Times New Roman", serif',     reg: 'times.ttf',   bold: 'timesbd.ttf' },
+    cour:    { label: 'Courier New',     css: '"Courier New", monospace',     reg: 'cour.ttf',    bold: 'courbd.ttf' },
+    impact:  { label: 'Impact',          css: 'Impact, sans-serif',           reg: 'impact.ttf',  bold: 'impact.ttf' },
+    comic:   { label: 'Comic Sans',      css: '"Comic Sans MS", cursive',     reg: 'comic.ttf',   bold: 'comicbd.ttf' },
+  };
+  const DEFAULT_TEXT = {
+    text: 'Your text', font: 'arial', bold: true, size: 0.08, color: '#ffffff',
+    outline: true, bg: false, bgColor: '#000000', x: 0, y: 0.3,
+  };
+  // The box behind text is the colour at this opacity; padding is this many em.
+  const TEXT_BG_ALPHA = 0.6;
+  const TEXT_PAD_EM = 0.25;
+  const TEXT_OUTLINE_EM = 0.06;
+
   function adjustIsDefault(a) {
     return !a || (a.brightness === 0 && a.contrast === 1 && a.saturation === 1);
   }
@@ -94,6 +115,7 @@
 
   const Effects = {
     PRESETS, TRANSITIONS, DEFAULT_ADJUST, DEFAULT_TRANSFORM,
+    FONTS, DEFAULT_TEXT, TEXT_BG_ALPHA, TEXT_PAD_EM, TEXT_OUTLINE_EM,
     ffmpegFilter, cssFilter, clampTransition, buttedNext, transitionPairs,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Effects;

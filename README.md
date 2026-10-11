@@ -1,4 +1,4 @@
-# Vid Editor
+# Opus
 
 A simple desktop video editor built with Electron and FFmpeg.
 
@@ -20,6 +20,7 @@ FFmpeg ships with the app through `ffmpeg-static` and `ffprobe-static`, so you d
 - **Resize, rotate and move** each clip: click it in the preview and drag the corners, the round handle, or the clip itself.
 - **Filters** for each clip: B&W, Sepia, Vintage, Vivid, Warm, Cool, Invert, Blur, plus brightness, contrast, and saturation sliders.
 - **Built-in effects** (Explosion, Fireworks, Lightning, Magic sparkle), each **with or without its sound**. They're screen-blended over your video, and you can move, size and trim them like any clip. Any clip can be muted.
+- **Text**: titles and captions from the sidebar at the top right. Choose font, size, colour, outline or box, when it shows, and drag it where you want it. Each text is a bar in a lane on the timeline that you can move and trim. It is drawn into the export.
 - **Transitions** between two clips that touch on the same track (centered on the cut): fade through black, crossfade, dissolve, wipes, slides, circle, clock wipe, pixelize.
 - **Export** to MP4 (H.264/AAC) at 1080p, 720p, 480p, vertical, or square, and at 24, 30, or 60 fps.
 - **Undo/redo** with Ctrl+Z and Ctrl+Y.

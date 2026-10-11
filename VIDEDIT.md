@@ -1,6 +1,6 @@
-# VIDEDIT: Vid Editor guide
+# VIDEDIT: Opus guide
 
-Vid Editor is a desktop video editor for Windows, built with Electron and FFmpeg. It has a multi-track timeline, trimming and splitting, filters, transitions, built-in **effects with sound** (explosion, fireworks, …), and per-clip **resize, rotate and move**. It exports to MP4.
+Opus is a desktop video editor for Windows, built with Electron and FFmpeg. It has a multi-track timeline, trimming and splitting, filters, transitions, built-in **effects with sound** (explosion, fireworks, …), and per-clip **resize, rotate and move**. It exports to MP4.
 
 ---
 
@@ -22,10 +22,11 @@ FFmpeg is included through the `ffmpeg-static` and `ffprobe-static` npm packages
 ┌──────────────────────────────────────────────────────────────────────┐
 │ + Import  Undo Redo  Split Delete           Size  FPS  [Export MP4] │  toolbar
 ├────────────┬──────────────────────────────────────┬─────────────────┤
-│  MEDIA     │            PREVIEW                   │   INSPECTOR     │
-│  thumbnails│   (click a video here to select it,  │   settings of   │
-│  of your   │    then move / resize / turn it)     │   the selected  │
-│  files     │   ⏮ ▶ ⏭  00:03.40 / 00:05.00         │   clip          │
+│  MEDIA     │            PREVIEW                   │   TEXT          │
+│  thumbnails│   (click a video here to select it,  │   titles and    │
+│  of your   │    then move / resize / turn it)     ├─────────────────┤
+│  files     │   ⏮ ▶ ⏭  00:03.40 / 00:05.00         │   INSPECTOR     │
+│            │                                      │   selected clip │
 ├────────────┴──────────────────────────────────────┴─────────────────┤
 │ TIMELINE   ruler                                                     │
 │  V2   [ clip ]                        ← higher tracks are on top     │
@@ -36,8 +37,9 @@ FFmpeg is included through the `ffmpeg-static` and `ffprobe-static` npm packages
 - **Media:** the files you imported. Drag them onto the timeline, double-click them, or click their **+** button.
 - **Effects:** built-in effects (Explosion, Fireworks, Lightning, Magic sparkle), under the media files. See section 9.
 - **Preview:** shows the frame at the playhead. Higher tracks are drawn over lower ones.
+- **Text** (top right): add titles and captions over the video. See section 10.
 - **Inspector:** timing, transform, filter, blend & sound and transition settings for the selected clip.
-- **Timeline:** your edit. Each row is a track (V1, V2, …).
+- **Timeline:** your edit. Each row is a track (V1, V2, …). Once you add a text, a **T** lane appears on top for texts.
 
 ---
 
@@ -168,18 +170,34 @@ The effects are created the first time the app starts (this takes a few seconds)
 
 ---
 
-## 10. Exporting
+## 10. Text (titles and captions)
+
+The **Text** sidebar at the top right puts text on top of the video.
+
+1. Move the playhead to where the text should appear and click **+ Add text**.
+2. Type your text in the **Text** box. The preview updates as you type.
+3. Choose the **Font**, **Size** (a percentage of the frame height), **Colour**, and whether it is **Bold**, has an **Outline**, or sits on a coloured **Box**.
+4. Set **Start** and **Duration** in seconds, or click **Start at playhead**.
+5. Drag the text in the preview to move it. It snaps to the centre; hold **Alt** to turn snapping off. You can also type exact **Position** values.
+
+Every text you add appears in the list and as a green bar in the **T lane** at the top of the timeline. Drag the bar to move the text in time, or drag its left or right edge to change when it starts or ends (they snap like clips). Click one to edit it; clicking it also moves the playhead onto it. **Delete** removes the selected text, and Undo/Redo covers text edits.
+
+Texts are drawn over all tracks. They aren't clips, so they have no video track (the T lane is only for them) and don't change the length of the video. Text that starts after the last clip doesn't show up in the export. The fonts are the ones that come with Windows, and the text is a single line.
+
+---
+
+## 11. Exporting
 
 1. Choose **Size**: 1080p, 720p or 480p (16:9), Vertical 9:16, or Square 1:1. The preview frame changes to match.
 2. Choose **FPS**: 24, 30 or 60.
 3. Click **Export MP4** (or press **Ctrl+E**) and choose where to save.
 4. A progress bar is shown and you can **Cancel**. When it finishes, click **Show in folder**.
 
-The output is H.264 video with AAC audio, and it plays everywhere.
+The output is H.264 video with AAC audio, and it plays everywhere. Text is drawn into the video.
 
 ---
 
-## 11. Keyboard shortcuts
+## 12. Keyboard shortcuts
 
 | Key | Action |
 |---|---|
@@ -197,15 +215,15 @@ The output is H.264 video with AAC audio, and it plays everywhere.
 
 ---
 
-## 12. How it works (for developers)
+## 13. How it works (for developers)
 
 | File | Purpose |
 |---|---|
 | `main.js` | Electron main process: window, file dialogs, `ffprobe` (duration, size, rotation, audio), thumbnails, runs the export and reports progress |
 | `preload.js` | Safe bridge (`window.api`) between the UI and the main process |
-| `export.js` | Builds the FFmpeg `filter_complex` for the whole timeline |
+| `export.js` | Builds the FFmpeg `filter_complex` for the whole timeline, including the text (`drawtext`) |
 | `builtin-effects.js` | Draws the built-in effects with a small particle renderer, makes their sounds with FFmpeg, and caches them as MP4s |
-| `src/effects.js` | Filters, transitions and the default transform. Shared by the preview (CSS) and the export (FFmpeg) so they match |
+| `src/effects.js` | Filters, transitions, fonts and the default transform and text. Shared by the preview (CSS) and the export (FFmpeg) so they match |
 | `src/renderer.js` | The editor UI: state, timeline, tracks, playback, the transform box, the inspector, undo/redo |
 | `src/index.html`, `src/styles.css` | Layout and styling |
 
@@ -220,13 +238,21 @@ The output is H.264 video with AAC audio, and it plays everywhere.
   transition: { type, duration } }  // to the next touching clip on the same track
 ```
 
-**Preview:** one `<video>` element per track, stacked in track order. Filters and transforms are CSS `filter`/`transform`. Screen blend is CSS `mix-blend-mode: screen`, and a muted clip's `<video>` is muted. The playhead is the master clock, and each layer follows the clip under it.
+**Text data** (`state.texts`, separate from clips):
+```js
+{ id, text, font, bold, size,       // size = fraction of the frame height
+  color, outline, bg, bgColor,
+  x, y,                             // centre, as a fraction of the frame, like a clip's transform
+  start, duration }                 // seconds on the timeline
+```
 
-**Export:** every clip (and every transition) becomes a full-frame layer with a transparent background. FFmpeg filters scale the clip, apply its filter, rotate it, and place it on that layer. The layers are overlaid on a black canvas from V1 upward, each only during its own time on the timeline. Screen-blend layers are combined with FFmpeg `blend=all_mode=screen` in RGB instead of `overlay`. Transitions use FFmpeg `xfade` between the two clips' layers, centred on the cut. All audio from clips that aren't muted is placed at its timeline position and mixed with `amix`.
+**Preview:** one `<video>` element per track, stacked in track order. Filters and transforms are CSS `filter`/`transform`. Screen blend is CSS `mix-blend-mode: screen`, and a muted clip's `<video>` is muted. The playhead is the master clock, and each layer follows the clip under it. Texts are HTML elements in a layer above the videos.
+
+**Export:** every clip (and every transition) becomes a full-frame layer with a transparent background. FFmpeg filters scale the clip, apply its filter, rotate it, and place it on that layer. The layers are overlaid on a black canvas from V1 upward, each only during its own time on the timeline. Screen-blend layers are combined with FFmpeg `blend=all_mode=screen` in RGB instead of `overlay`. Transitions use FFmpeg `xfade` between the two clips' layers, centred on the cut. Text is added last with one `drawtext` filter per text, enabled only between its start and end. All audio from clips that aren't muted is placed at its timeline position and mixed with `amix`.
 
 ---
 
-## 13. Known limitations
+## 14. Known limitations
 
 - The **preview of transitions** is a simple fade. The exported file has the real wipe, slide, and so on.
 - Some formats (for example HEVC/H.265 or certain MKV/AVI files) may show **black in the preview** because the built-in player can't decode them. They still **export correctly**.
