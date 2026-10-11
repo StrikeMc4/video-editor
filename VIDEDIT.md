@@ -14,6 +14,23 @@ npm start        # opens the editor
 
 FFmpeg is included through the `ffmpeg-static` and `ffprobe-static` npm packages, so you don't need to install it separately.
 
+### Web version (Chrome)
+
+The same editor also runs in a browser. To try it on your computer:
+
+```
+npm run web      # then open http://localhost:8080/web/ in Chrome
+```
+
+To share it with everyone, push to GitHub and turn on Pages (repo **Settings → Pages → Source: GitHub Actions**). The workflow in `.github/workflows/pages.yml` then publishes it at `https://<user>.github.io/<repo>/`. The desktop app doesn't change.
+
+Differences in the web version:
+- Your videos stay on your computer. Nothing is uploaded, and the export runs inside the browser.
+- **Export is slower** than in the desktop app (about 4× the video length at 720p on a typical PC). The first visit downloads FFmpeg once (about 30 MB).
+- Chrome and Edge ask where to save the video. Other browsers download it. After exporting, **Play video** opens the result (instead of **Show in folder**).
+- Text uses free look-alike fonts (Arimo for Arial, Tinos for Times New Roman, Cousine for Courier New, Noto Sans for Verdana, Anton for Impact, Comic Neue for Comic Sans), in both the preview and the export.
+- You can only import formats the browser can play (MP4/H.264, WebM, and usually MOV).
+
 ---
 
 ## 2. The screen
@@ -231,3 +248,4 @@ Files and where to find things: [README.md → File structure](README.md#file-st
 - Some formats (for example HEVC/H.265 or certain MKV/AVI files) may show **black in the preview** because the built-in player can't decode them. They still **export correctly**.
 - Clips can't be cropped. Sound is on/off per clip, but there's no volume control yet and no audio-only track.
 - Projects can't be saved yet. Closing the app loses the current edit (export it first).
+- **Web version:** export runs single-threaded in the browser, so it is slow. Very long or 1080p/60 fps exports can run out of browser memory (about 2 GB). Formats the browser can't play (HEVC, many MKV/AVI) are refused on import.

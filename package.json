@@ -4,7 +4,8 @@
   "description": "Simple desktop video editor: trim, split, transitions and filters",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "web": "node web/serve.js"
   },
   "license": "MIT",
   "dependencies": {

@@ -1,0 +1,38 @@
+# Publishes the web version (web/) to GitHub Pages.
+# One-time setup: repo Settings → Pages → Source: "GitHub Actions".
+name: Deploy web version
+on:
+  push:
+    branches: [main, web-version]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}web/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --omit=dev
+      - run: node web/build-effects.js
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -r src web export.js _site/
+          rm -f _site/web/serve.js _site/web/build-effects.js
+          echo '<meta http-equiv="refresh" content="0; url=web/">' > _site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

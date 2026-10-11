@@ -1,0 +1,20 @@
+/* Web version only. Text fonts: the export draws text with these open
+   look-alikes of the Windows fonts, so the preview uses the same files. */
+@font-face { font-family: 'Arial'; src: url('fonts/Arimo-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'Arial'; src: url('fonts/Arimo-Bold.ttf'); font-weight: 700; }
+@font-face { font-family: 'Verdana'; src: url('fonts/NotoSans-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'Verdana'; src: url('fonts/NotoSans-Bold.ttf'); font-weight: 700; }
+@font-face { font-family: 'Times New Roman'; src: url('fonts/Tinos-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'Times New Roman'; src: url('fonts/Tinos-Bold.ttf'); font-weight: 700; }
+@font-face { font-family: 'Courier New'; src: url('fonts/Cousine-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'Courier New'; src: url('fonts/Cousine-Bold.ttf'); font-weight: 700; }
+@font-face { font-family: 'Impact'; src: url('fonts/Anton-Regular.ttf'); }
+@font-face { font-family: 'Comic Sans MS'; src: url('fonts/ComicNeue-Regular.ttf'); font-weight: 400; }
+@font-face { font-family: 'Comic Sans MS'; src: url('fonts/ComicNeue-Bold.ttf'); font-weight: 700; }
+
+#web-loading {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  color: var(--muted, #9aa0aa);
+}
