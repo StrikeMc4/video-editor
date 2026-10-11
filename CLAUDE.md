@@ -1,27 +1,20 @@
 # CLAUDE.md
 
-Desktop video editor built with Electron and FFmpeg. It has no framework, no bundler, and no build step: the code is plain JS, HTML and CSS. The user guide is `VIDEDIT.md`; keep it in sync when you change user-visible behaviour.
+Desktop video editor, Electron + FFmpeg, plain JS/HTML/CSS with no build step.
 
-## Commands
+**Read first:**
+- `README.md` → **File structure**: what every file does and where to look for a task.
+- `docs/openspec/specs/<area>/spec.md`: the expected behaviour of the area you're changing.
+- `VIDEDIT.md`: the user guide.
 
-```
-npm install      # Electron + ffmpeg-static + ffprobe-static
-npm start        # launches the app (electron .)
-```
+`npm install`, then `npm start`. There is no test suite, linter or build. Verify by driving the real app (see **Verifying changes**).
 
-There is no test suite, linter or build in the repo. Verify changes by driving the real app (see **Verifying changes**).
+## After every change
 
-## Layout
-
-| File | Role |
-|---|---|
-| `main.js` | Main process: window, open/save dialogs, `ffprobe` (duration, display size, rotation, audio), thumbnails into a temp dir, spawns the export and streams progress |
-| `preload.js` | `contextBridge` → `window.api` (importMedia, loadMedia, pathForFile, exportVideo, cancelExport, onExportProgress, revealFile) |
-| `export.js` | `buildExportArgs(clips, settings, outPath)`: builds the whole FFmpeg command/`filter_complex`. Pure function, can be tested from Node |
-| `builtin-effects.js` | Main only. Renders the built-in overlay effects (particle renderer → raw frames → FFmpeg, with an `aevalsrc` sound) into `userData/builtin-effects/<key>-v<VERSION>.mp4` on first run. Bump `VERSION` after changing an effect |
-| `src/effects.js` | Shared by renderer **and** main (UMD: `<script>` sets `window.Effects`, Node uses `require`). Filter presets (CSS + FFmpeg equivalents), transitions, `DEFAULT_ADJUST`, `DEFAULT_TRANSFORM`, `clampTransition`, `buttedNext`, `transitionPairs` |
-| `src/renderer.js` | All UI: state, undo, timeline, playback, transform box, inspector, export modal. One classic script; top-level `const`s/functions are globals |
-| `src/index.html`, `src/styles.css` | Layout; CSS colour tokens live on `:root` |
+1. Update the affected `docs/openspec/specs/<area>/spec.md` so it describes the app as it is now.
+2. Add `docs/openspec/changes/archive/NNN-name/` (next number) with `proposal.md` and `tasks.md`. Add `design.md` only for a non-obvious decision.
+3. If user-visible behaviour changed, update `VIDEDIT.md` (including **Known limitations**).
+4. If files were added or moved, update the file structure in `README.md`.
 
 ## Data model (renderer `state`)
 
@@ -32,57 +25,56 @@ clips: [{ id, mediaId, track, start, in, out, effect, adjust,
           transform: { x, y, scale, rotation },   // x/y = fraction of frame, scale vs fit-to-frame, deg clockwise
           blend, muted,                           // 'normal' | 'screen'; muted drops the clip's audio
           transition: { type, duration } }]       // to the clip butted after it on the same track
+texts: [{ id, text, font, bold, size, color, outline, bg, bgColor,
+          x, y, start, duration }]                // not clips: no track; size = fraction of frame height
+selectedId, selectedTextId, playhead, playing, zoom
 ```
 
-- Timeline position is `start`. Length is `out - in`. Track 0 is V1 (bottom). Higher tracks draw on top.
-- Tracks are **implicit**: `trackCount()` is derived from the clips. After any move or delete, call `normalizeTracks()` so empty tracks vanish.
-- Placement rule (the user explicitly asked for it): if a dropped clip overlaps a clip on the target track, it goes on a **new track directly above** that track. Dropping above all tracks or below V1 creates a top or bottom track. Use `planPlacement()` + `applyPlacement()`, and never set `track` by hand.
-- A transition exists only when two clips **butt** on the same track (`|b.start - aEnd| < BUTT_EPS`). It is centred on the cut and must never shift timing. `clampTransition` caps it at the shorter clip.
-- Old clips may lack `transform`, `blend` or `muted`. Read them through `tf(c)` / `isScreen(c)` / `!!c.muted`.
-- Built-in effects live in `state.media` with `builtin` set. The media bin shows only files without it, and the Effects list shows only effects.
+Invariants (details in the specs):
+- Tracks are implicit. After any move or delete, call `normalizeTracks()`. Place clips only through `planPlacement()` + `applyPlacement()`; never set `track` by hand. The user explicitly asked for the "new track above on overlap" rule.
+- A transition exists only between clips that **butt** on one track. It is centred on the cut and never shifts timing.
+- Old clips may lack `transform`, `blend` or `muted`. Read them through `tf(c)`, `isScreen(c)` and `!!c.muted`.
+- Built-in effects are `state.media` items with `builtin` set. Bump `VERSION` in `builtin-effects.js` after changing one.
+- The timeline's track y-positions include `laneH()` (the text lane, 0 when there are no texts).
 
 ## Conventions
 
-- Every mutation is preceded by `commit()` (undo snapshot). For continuous gestures (sliders, drags) use `beginEdit()`/`endEdit()` or commit once on the first move, so one gesture equals one undo step.
-- Re-render with `renderAll()` (timeline, inspector, buttons, transform box). During drags, use the cheaper live paths (`renderTimeline()`, `applyTransformLive()`, `showFrame()`).
-- **Preview and export must match.** Any new filter, transition or transform needs both a CSS path (renderer) and an FFmpeg path (`export.js` / `effects.js`). Check by comparing a preview screenshot with an exported frame.
-- Match the existing style: 2-space indent, single quotes, semicolons, small helpers, sparse comments that explain *why*.
+- Every mutation is preceded by `commit()`. A continuous gesture (slider, drag) is one undo step: use `beginEdit()`/`endEdit()` or commit on the first move.
+- Re-render with `renderAll()`. During drags use the cheap paths (`renderTimeline()`, `applyTransformLive()`, `renderTexts()`, `showFrame()`). Text edits re-render with `renderTextPanel()`, which also redraws the timeline.
+- **Preview and export must match.** Anything visual needs a CSS path (renderer) and an FFmpeg path (`export.js` / `src/effects.js`). Compare a preview screenshot with an exported frame.
+- Style: 2-space indent, single quotes, semicolons, small helpers, sparse comments that explain *why*.
 
 ## Gotchas (all of these have bitten before)
 
-- `window.api` is defined by `contextBridge` and is **non-configurable**. Never write `const api = …` in the renderer; it throws a SyntaxError and the whole UI silently dies.
-- HTML is built with template strings inside double-quoted `style="…"` attributes. Use `cssUrl()` (single-quoted `url('…')`) and `esc()` for user text.
-- The `#workspace` grid uses `minmax(0, 1fr)` and `min-width: 0` so the preview can shrink when the window does. Without it, the preview drifts off-centre after un-maximizing.
-- `fitFrame()` leaves vertical room for the rotate handle, which sits above the box. Don't put `overflow: hidden` on `#stage`, or the handle gets clipped.
-- Preview playback and scrubbing use `requestAnimationFrame`, which Chromium pauses for hidden or occluded windows. In automated runs call `win.webContents.setBackgroundThrottling(false); win.show()`, or playback looks broken when it isn't.
-- Export layers are full-frame `rgba`/`yuva420p` with transparent backgrounds, overlaid with `enable='gte(t,S)*lt(t,E)'` (not `between`, which double-draws butted clips). Times are snapped to the frame grid with `q()`.
-- ffmpeg-static is FFmpeg 6.1, but ffprobe-static is **4.0.2**. Probe output fields can differ: rotation comes from `tags.rotate` or `side_data_list[].rotation`.
-- Packaged builds need the binaries outside asar. `main.js` already rewrites `app.asar` → `app.asar.unpacked`, so keep that if you add packaging.
-- Running `npm start` while another instance is open prints harmless `disk_cache … Erişim engellendi` (access denied) errors, and the old window keeps running old code.
-- The user's Windows locale is Turkish. `<input type=number>` displays `0,00`, but `.value` is always dot-decimal.
+- `window.api` comes from `contextBridge` and is **non-configurable**. Writing `const api = …` in the renderer throws a SyntaxError, and the whole UI silently dies.
+- HTML is built with template strings inside double-quoted `style="…"`. Use `cssUrl()` (single-quoted `url('…')`) and `esc()` for user text.
+- `#workspace` uses `minmax(0, 1fr)` and `min-width: 0` so the preview can shrink. Without them it drifts off-centre after un-maximizing.
+- `fitFrame()` leaves room for the rotate handle above the box. No `overflow: hidden` on `#stage`.
+- `requestAnimationFrame` pauses in hidden windows. Automated runs need `win.webContents.setBackgroundThrottling(false); win.show()`.
+- Export overlays use `enable='gte(t,S)*lt(t,E)'`, not `between` (which double-draws butted clips). Times are snapped with `q()`.
+- `drawtext` values go through two parsers. Always use `ffQuote()` in `export.js`.
+- ffmpeg-static is FFmpeg 6.1, but ffprobe-static is **4.0.2**: rotation comes from `tags.rotate` or `side_data_list[].rotation`.
+- Packaged builds need `app.asar` → `app.asar.unpacked` for the binaries (already in `main.js`).
+- A second `npm start` prints harmless `disk_cache … Erişim engellendi` errors, and the old window keeps running the old code.
+- The Windows locale is Turkish. `<input type=number>` shows `0,00`, but `.value` is dot-decimal.
+- Writing files from Bash heredocs mangles backslashes and quotes. For JS with regexes or escapes, use the Write/Edit tools.
 
 ## Verifying changes
 
-Don't stop at "it should work". Launch the real app headlessly with a throwaway Electron entry script kept in your scratchpad, not in the repo:
+Launch the real app headlessly with a throwaway script in your scratchpad, not in the repo:
 
 ```js
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [/* test videos */] });
 dialog.showSaveDialog = async () => ({ canceled: false, filePath: '<scratch>/out.mp4' });
 require('<repo>/main.js');
 app.whenReady().then(() => setTimeout(async () => {
   const win = BrowserWindow.getAllWindows()[0];
   win.webContents.setBackgroundThrottling(false); win.show();
-  // executeJavaScript(...) can call renderer globals (state, importMedia, setPlayhead, renderAll…)
-  // and dispatch real PointerEvent/KeyboardEvent to exercise the UI; capturePage() for screenshots.
+  // executeJavaScript(...) calls renderer globals (state, importMedia, setPlayhead, renderAll, doExport…)
+  // and dispatches real PointerEvent/KeyboardEvent; capturePage() for screenshots.
   app.quit();
 }, 1500));
 ```
 
-Run it with `npx electron <script>` from the repo root. Make test media with the bundled FFmpeg (`node_modules/ffmpeg-static/ffmpeg.exe -f lavfi -i testsrc=…`). Include a clip without audio, mixed resolutions/fps, and a portrait clip made with `-display_rotation 90 … -c copy`. For export changes, call `buildExportArgs` directly from Node, run FFmpeg, check the duration, and look at extracted frames.
-
-Before finishing, re-check every feature listed in `VIDEDIT.md` that your change could affect, and update `VIDEDIT.md` (and the short `README.md`) if behaviour changed.
-
-## Not implemented yet
-
-Project save/load, cropping, per-clip volume (only mute exists), audio-only tracks, packaging/installer. These are listed as limitations in `VIDEDIT.md`, so update that section when adding one.
+Run it with `npx electron <script>` from the repo root. Make test media with `node_modules/ffmpeg-static/ffmpeg.exe -f lavfi -i testsrc=…`. Include a clip without audio, mixed resolutions/fps, and a portrait clip (`-display_rotation 90 … -c copy`). For export changes, call `buildExportArgs` from Node, run FFmpeg, check the duration and look at extracted frames. Before finishing, re-check every `VIDEDIT.md` feature your change could affect.

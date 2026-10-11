@@ -217,34 +217,7 @@ The output is H.264 video with AAC audio, and it plays everywhere. Text is drawn
 
 ## 13. How it works (for developers)
 
-| File | Purpose |
-|---|---|
-| `main.js` | Electron main process: window, file dialogs, `ffprobe` (duration, size, rotation, audio), thumbnails, runs the export and reports progress |
-| `preload.js` | Safe bridge (`window.api`) between the UI and the main process |
-| `export.js` | Builds the FFmpeg `filter_complex` for the whole timeline, including the text (`drawtext`) |
-| `builtin-effects.js` | Draws the built-in effects with a small particle renderer, makes their sounds with FFmpeg, and caches them as MP4s |
-| `src/effects.js` | Filters, transitions, fonts and the default transform and text. Shared by the preview (CSS) and the export (FFmpeg) so they match |
-| `src/renderer.js` | The editor UI: state, timeline, tracks, playback, the transform box, the inspector, undo/redo |
-| `src/index.html`, `src/styles.css` | Layout and styling |
-
-**Clip data:**
-```js
-{ id, mediaId, track, start,        // where it sits on the timeline
-  in, out,                          // which part of the source file
-  effect, adjust,                   // filter
-  transform: { x, y, scale, rotation },
-  blend,                            // 'normal' or 'screen'
-  muted,                            // true = the clip's sound is left out
-  transition: { type, duration } }  // to the next touching clip on the same track
-```
-
-**Text data** (`state.texts`, separate from clips):
-```js
-{ id, text, font, bold, size,       // size = fraction of the frame height
-  color, outline, bg, bgColor,
-  x, y,                             // centre, as a fraction of the frame, like a clip's transform
-  start, duration }                 // seconds on the timeline
-```
+Files and where to find things: [README.md → File structure](README.md#file-structure). Data model and coding rules: [CLAUDE.md](CLAUDE.md). Expected behaviour per area and the change log: [docs/openspec](docs/openspec/README.md).
 
 **Preview:** one `<video>` element per track, stacked in track order. Filters and transforms are CSS `filter`/`transform`. Screen blend is CSS `mix-blend-mode: screen`, and a muted clip's `<video>` is muted. The playhead is the master clock, and each layer follows the clip under it. Texts are HTML elements in a layer above the videos.
 

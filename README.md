@@ -1,46 +1,66 @@
 # Opus
 
-A simple desktop video editor built with Electron and FFmpeg.
-
-**Full guide: [VIDEDIT.md](VIDEDIT.md)**
+A simple desktop video editor built with Electron and FFmpeg. Plain JS/HTML/CSS: no framework, no bundler, no build step.
 
 ## Run
 
     npm install
     npm start
 
-FFmpeg ships with the app through `ffmpeg-static` and `ffprobe-static`, so you don't need to install it separately.
+FFmpeg ships with the app (`ffmpeg-static`, `ffprobe-static`); nothing else to install.
 
-## Features
+## What it does
 
-- **Import** videos with the Import button (Ctrl+I) or by dragging files into the window.
-- **Multi-track timeline**: drag clips anywhere. If you drop a clip onto another clip, a new track is created above it. Dropping above or below all tracks also makes a new track, and empty tracks are removed. Higher tracks cover lower ones, and the audio from all tracks is mixed.
-- **Snapping**: clips snap to the edges of other clips and to the playhead. Drag a clip's edges to trim it.
-- **Split** the clip under the playhead by pressing **S**.
-- **Resize, rotate and move** each clip: click it in the preview and drag the corners, the round handle, or the clip itself.
-- **Filters** for each clip: B&W, Sepia, Vintage, Vivid, Warm, Cool, Invert, Blur, plus brightness, contrast, and saturation sliders.
-- **Built-in effects** (Explosion, Fireworks, Lightning, Magic sparkle), each **with or without its sound**. They're screen-blended over your video, and you can move, size and trim them like any clip. Any clip can be muted.
-- **Text**: titles and captions from the sidebar at the top right. Choose font, size, colour, outline or box, when it shows, and drag it where you want it. Each text is a bar in a lane on the timeline that you can move and trim. It is drawn into the export.
-- **Transitions** between two clips that touch on the same track (centered on the cut): fade through black, crossfade, dissolve, wipes, slides, circle, clock wipe, pixelize.
-- **Export** to MP4 (H.264/AAC) at 1080p, 720p, 480p, vertical, or square, and at 24, 30, or 60 fps.
-- **Undo/redo** with Ctrl+Z and Ctrl+Y.
+Multi-track timeline (drop on a clip → new track above) · trim, split, snap · move / resize / rotate clips in the preview · filters · transitions between touching clips · built-in effects (explosion, fireworks, …) with optional sound · text titles · MP4 export (1080p–480p, vertical, square; 24/30/60 fps) · undo/redo.
 
-## Keyboard shortcuts
+How to use each feature: **[VIDEDIT.md](VIDEDIT.md)**.
 
-| Key | Action |
-| --- | --- |
-| Space | Play/pause |
-| S | Split at playhead |
-| Del | Delete selected clip |
-| ← / → | Step one frame (hold Shift to step one second) |
-| Home / End | Jump to start/end |
-| + / − or Ctrl+wheel | Zoom the timeline |
+## Documentation
 
-## Files
+| File | For | Contents |
+|---|---|---|
+| `README.md` | everyone | this page: run it, where everything is |
+| `VIDEDIT.md` | users | the user guide, shortcuts, known limitations |
+| `CLAUDE.md` | agents / developers | data model, conventions, gotchas, how to verify a change |
+| `docs/openspec/specs/` | agents / developers | what each area is supposed to do now (one `spec.md` per area) |
+| `docs/openspec/changes/archive/` | agents / developers | log of every change made: why, what, tasks |
 
-- `main.js`: Electron main process (file dialogs, ffprobe, thumbnails, running the export)
-- `export.js`: builds the FFmpeg `filter_complex` that renders the timeline
-- `builtin-effects.js`: generates the built-in effect videos and sounds (cached on first run)
-- `preload.js`: safe IPC bridge to the UI
-- `src/effects.js`: filter and transition definitions shared by the preview (CSS) and the export (FFmpeg)
-- `src/renderer.js`, `src/index.html`, `src/styles.css`: the editor UI
+## File structure
+
+```
+vid editor/
+├── main.js               Main process: window, open/save dialogs, ffprobe (duration, display size,
+│                         rotation, audio), thumbnails, built-in effects IPC, spawns the export + progress
+├── preload.js            contextBridge → window.api (importMedia, loadMedia, listEffects, pathForFile,
+│                         exportVideo, cancelExport, onExportProgress, revealFile)
+├── export.js             buildExportArgs(clips, settings, outPath, texts): the whole FFmpeg command /
+│                         filter_complex (video layers, transitions, text drawtext, audio mix). Pure, testable from Node
+├── builtin-effects.js    Main only. Renders the built-in effects (particles → frames → FFmpeg, aevalsrc sound)
+│                         into userData/builtin-effects/<key>-v<VERSION>.mp4 on first run
+├── src/
+│   ├── index.html        Layout: toolbar, media + effects (left), preview + transport (middle),
+│   │                     text sidebar + inspector (right), timeline (bottom), export modal
+│   ├── styles.css        All styling; colour tokens on :root
+│   ├── renderer.js       All UI in one classic script: state, undo, timeline (tracks + text lane), playback,
+│   │                     transform box, text overlays, inspector, export modal
+│   └── effects.js        Shared by renderer and main (UMD): filter presets (CSS + FFmpeg), transitions,
+│                         fonts, DEFAULT_ADJUST / DEFAULT_TRANSFORM / DEFAULT_TEXT, transition helpers
+├── docs/
+│   ├── README.md         Index of the docs
+│   └── openspec/         specs/<area>/spec.md + changes/archive/NNN-name/ (see docs/openspec/README.md)
+├── VIDEDIT.md            User guide
+├── CLAUDE.md             Agent instructions
+└── package.json          Electron + ffmpeg-static + ffprobe-static; `npm start` = electron .
+```
+
+**Where to look for…**
+
+| Task | Files |
+|---|---|
+| Timeline, tracks, drag/drop, trim, split | `src/renderer.js` (placement, timeline interaction) |
+| Preview playback | `src/renderer.js` (`syncPlayers`, `tick`) |
+| A new filter or transition | `src/effects.js` (CSS + FFmpeg) and `export.js` |
+| Text overlays | `src/renderer.js` (text overlays section), `src/effects.js` (`FONTS`), `export.js` (`drawtext`) |
+| Built-in effects | `builtin-effects.js`, `main.js` (`effects:list`) |
+| Export output / codecs | `export.js`, `main.js` (`export:start`) |
+| Import / probing / thumbnails | `main.js` |
